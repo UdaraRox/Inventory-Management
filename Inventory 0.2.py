@@ -2,6 +2,10 @@ import tkinter as tk
 from tkinter import ttk, messagebox
 import pandas as pd
 import os
+try:
+    from tkcalendar import Calendar
+except ImportError:
+    messagebox.showerror("Missing Module", "Please install tkcalendar using: pip install tkcalendar")
 
 DATA_DIR = "inventory_data"
 os.makedirs(DATA_DIR, exist_ok=True)
@@ -120,7 +124,7 @@ def open_grn_form(title, inventory_list):
         tk.Label(form, text=lbl, bg="#F4F6F8").grid(row=r, column=0, sticky="w", pady=6)
         widget.grid(row=r, column=1, sticky="ew", pady=6)
 
-    row("Date", tk.Entry(form, textvariable=date_var), 0)
+    row("Date (YYYY-MM-DD)", tk.Entry(form, textvariable=date_var), 0)
     row("Inventory Type",
         ttk.Combobox(form, values=inventory_list,
                      textvariable=item_var, state="readonly"), 1)
@@ -248,44 +252,163 @@ def open_min_window():
         tk.Button(win, text=b, height=2, bg="white").pack(fill="x", padx=40, pady=5)
 
 # ==================================================
-# BIN CARDS
+# BIN CARDS (ENHANCED UI & DATE FILTERS WITH CALENDAR)
 # ==================================================
 def open_bin_table(item):
     df = load_table(item)
+    
     win = tk.Toplevel()
     win.title(f"Bin Card - {item}")
-    win.geometry("900x400")
+    win.geometry("1100x600")
     win.configure(bg="#F4F6F8")
 
-    tk.Label(win, text=f"Bin Card: {item}", font=("Arial", 14, "bold"), bg="#F4F6F8").pack(pady=10)
+    # --- Treeview Custom Styling ---
+    style = ttk.Style()
+    style.theme_use("clam")
+    style.configure("Treeview.Heading", font=("Arial", 11, "bold"), background="#2C5DAA", foreground="white")
+    style.configure("Treeview", font=("Arial", 10), rowheight=30, background="white", fieldbackground="white")
+    style.map("Treeview", background=[("selected", "#4A90E2")], foreground=[("selected", "white")])
 
-    frame = tk.Frame(win)
-    frame.pack(fill="both", expand=True, padx=20, pady=10)
+    # --- Header ---
+    header = tk.Frame(win, bg="#2C5DAA", height=60)
+    header.pack(fill="x")
+    tk.Label(header, text=f"Bin Card Report: {item}", font=("Arial", 16, "bold"), bg="#2C5DAA", fg="white").pack(pady=15)
 
-    tree = ttk.Treeview(frame, columns=list(df.columns), show="headings")
-    tree.pack(side="left", fill="both", expand=True)
+    # --- Filters Panel ---
+    filter_frame = tk.Frame(win, bg="white", bd=1, relief="solid")
+    filter_frame.pack(fill="x", padx=20, pady=15)
 
-    vsb = ttk.Scrollbar(frame, orient="vertical", command=tree.yview)
+    # General Search text
+    tk.Label(filter_frame, text="Search:", bg="white", font=("Arial", 9, "bold")).pack(side="left", padx=(15, 5), pady=15)
+    search_var = tk.StringVar()
+    search_entry = tk.Entry(filter_frame, textvariable=search_var, width=20, font=("Arial", 10))
+    search_entry.pack(side="left", padx=5)
+
+    # --- Calendar Popup Function ---
+    def popup_calendar(target_var):
+        top = tk.Toplevel(win)
+        top.title("Select Date")
+        top.geometry("250x230")
+        top.resizable(False, False)
+        
+        cal = Calendar(top, selectmode='day', date_pattern='yyyy-mm-dd')
+        cal.pack(padx=10, pady=10, fill="both", expand=True)
+
+        def set_date():
+            target_var.set(cal.get_date())
+            top.destroy()
+            
+        tk.Button(top, text="Select", bg="#2C5DAA", fg="white", command=set_date, font=("Arial", 10, "bold")).pack(pady=5)
+
+    # From Date Filter
+    tk.Label(filter_frame, text="From Date:", bg="white", font=("Arial", 9, "bold")).pack(side="left", padx=(15, 5))
+    from_date_var = tk.StringVar()
+    from_entry = tk.Entry(filter_frame, textvariable=from_date_var, width=12, font=("Arial", 10))
+    from_entry.pack(side="left", padx=2)
+    tk.Button(filter_frame, text="📅", bg="white", bd=1, cursor="hand2", command=lambda: popup_calendar(from_date_var)).pack(side="left", padx=(0, 5))
+
+    # To Date Filter
+    tk.Label(filter_frame, text="To Date:", bg="white", font=("Arial", 9, "bold")).pack(side="left", padx=(15, 5))
+    to_date_var = tk.StringVar()
+    to_entry = tk.Entry(filter_frame, textvariable=to_date_var, width=12, font=("Arial", 10))
+    to_entry.pack(side="left", padx=2)
+    tk.Button(filter_frame, text="📅", bg="white", bd=1, cursor="hand2", command=lambda: popup_calendar(to_date_var)).pack(side="left", padx=(0, 5))
+
+    # --- Footer Panel (Created early so functions can access labels) ---
+    footer = tk.Frame(win, bg="white", bd=1, relief="solid")
+    footer.pack(side="bottom", fill="x", padx=20, pady=15)
+
+    lbl_qty = tk.Label(footer, text="Total Quantity : 0", font=("Arial", 12, "bold"), bg="white", fg="#2C5DAA")
+    lbl_qty.pack(side="left", padx=20, pady=15)
+
+    lbl_val = tk.Label(footer, text="Total Value : Rs 0.00", font=("Arial", 12, "bold"), bg="white", fg="#2C5DAA")
+    lbl_val.pack(side="right", padx=20, pady=15)
+
+    # --- Table Panel ---
+    table_frame = tk.Frame(win, bg="#F4F6F8")
+    table_frame.pack(fill="both", expand=True, padx=20, pady=5)
+
+    columns = list(df.columns) if not df.empty else ["Date", "Item", "Supplier", "Remarks", "Quantity", "NetRate", "TotalCost"]
+    tree = ttk.Treeview(table_frame, columns=columns, show="headings", selectmode="browse")
+
+    vsb = ttk.Scrollbar(table_frame, orient="vertical", command=tree.yview)
     vsb.pack(side="right", fill="y")
     tree.configure(yscrollcommand=vsb.set)
+    tree.pack(side="left", fill="both", expand=True)
 
-    for col in df.columns:
+    for col in columns:
         tree.heading(col, text=col)
-        tree.column(col, width=120)
+        tree.column(col, width=120, anchor="center")
 
-    for _, row in df.iterrows():
-        tree.insert("", "end", values=list(row))
+    # Alternating row colors
+    tree.tag_configure("evenrow", background="#F9F9F9")
+    tree.tag_configure("oddrow", background="#FFFFFF")
 
-    total_qty = df["Quantity"].sum() if not df.empty else 0
-    total_val = df["TotalCost"].sum() if not df.empty else 0
+    # --- Functions for Populating and Filtering ---
+    def populate_table(data_frame):
+        for row in tree.get_children():
+            tree.delete(row)
+            
+        total_qty = 0
+        total_val = 0
 
-    footer = tk.Frame(win, bg="#F4F6F8")
-    footer.pack(fill="x", pady=10)
+        for index, row in data_frame.iterrows():
+            tags = ("evenrow",) if index % 2 == 0 else ("oddrow",)
+            tree.insert("", "end", values=list(row), tags=tags)
+            try:
+                total_qty += float(row["Quantity"])
+                total_val += float(row["TotalCost"])
+            except ValueError:
+                pass
+                
+        lbl_qty.config(text=f"Total Quantity : {total_qty:.2f}")
+        lbl_val.config(text=f"Total Value : Rs {total_val:.2f}")
 
-    tk.Label(footer, text=f"Total Quantity : {total_qty}",
-             font=("Arial", 11, "bold"), bg="#F4F6F8").pack(side="left", padx=20)
-    tk.Label(footer, text=f"Total Inventory Value : Rs {total_val:.2f}",
-             font=("Arial", 11, "bold"), bg="#F4F6F8").pack(side="right", padx=20)
+    def apply_filter(*args):
+        if df.empty: return
+        mask = pd.Series(True, index=df.index)
+
+        search_text = search_var.get().lower()
+        if search_text:
+            text_mask = (
+                df["Supplier"].astype(str).str.lower().str.contains(search_text) |
+                df["Remarks"].astype(str).str.lower().str.contains(search_text)
+            )
+            mask = mask & text_mask
+
+        from_d = from_date_var.get().strip()
+        to_d = to_date_var.get().strip()
+        temp_dates = pd.to_datetime(df["Date"], errors="coerce")
+
+        if from_d:
+            try:
+                fd = pd.to_datetime(from_d)
+                mask = mask & (temp_dates >= fd)
+            except Exception: pass
+
+        if to_d:
+            try:
+                td = pd.to_datetime(to_d)
+                mask = mask & (temp_dates <= td)
+            except Exception: pass
+
+        filtered_df = df[mask]
+        populate_table(filtered_df)
+
+    def clear_filter():
+        search_var.set("")
+        from_date_var.set("")
+        to_date_var.set("")
+        populate_table(df)
+
+    tk.Button(filter_frame, text="Apply Filter", bg="#2C5DAA", fg="white", font=("Arial", 9, "bold"), command=apply_filter).pack(side="left", padx=(10, 5))
+    tk.Button(filter_frame, text="Clear", bg="#E9ECEF", fg="black", font=("Arial", 9), command=clear_filter).pack(side="left", padx=5)
+
+    search_entry.bind("<Return>", apply_filter)
+    from_entry.bind("<Return>", apply_filter)
+    to_entry.bind("<Return>", apply_filter)
+
+    populate_table(df)
 
 
 def open_bin_cards_menu():
@@ -303,7 +426,6 @@ def open_bin_cards_menu():
         "Packing Materials": ["Pm1", "Pm2", "Pm3"]
     }
 
-    # Scrollable frame 
     canvas = tk.Canvas(win, bg="#F4F6F8", highlightthickness=0)
     scrollbar = ttk.Scrollbar(win, orient="vertical", command=canvas.yview)
     scrollable_frame = tk.Frame(canvas, bg="#F4F6F8")
